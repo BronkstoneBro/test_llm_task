@@ -1,10 +1,10 @@
 import os
 import streamlit as st
-from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.llms import OpenAI
 from langchain.chains import RetrievalQA
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.prompts import PromptTemplate
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime, timedelta
@@ -12,10 +12,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL: str = "gpt-4o-mini"
 
 FAQ_URL = "https://ti.ua/ua/faq/"
 STORES_URL = "https://ti.ua/ua/nashi-magazini/"
+
 
 def fetch_page_text(url):
     resp = requests.get(url)
@@ -48,15 +50,28 @@ def build_vectorstore(docs):
     vectorstore = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
     return vectorstore
 
-#LangChain QA
+
+# LangChain QA
 def get_qa_chain(vectorstore):
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    llm = OpenAI(temperature=0, openai_api_key=OPENAI_API_KEY)
+    llm = OpenAI(temperature=0, openai_api_key=OPENAI_API_KEY, model=OPENAI_MODEL)
+
+    prompt = PromptTemplate(
+        input_variables=["context", "question"],
+        template=(
+            "Відповідай українською мовою, використовуючи тільки надану інформацію з FAQ TI.UA.\n"
+            "Контекст:\n{context}\n"
+            "Питання: {question}\n"
+            "Відповідь:"
+        )
+    )
+    
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
         retriever=retriever,
         return_source_documents=True,
+        chain_type_kwargs={"prompt": prompt}
     )
     return qa
 
@@ -67,7 +82,8 @@ def process_date_query(query):
     query = query.replace("сьогодні", today).replace("завтра", tomorrow)
     return query
 
-#Streamlit UI
+
+# Streamlit UI
 st.set_page_config(page_title="Чат підтримки TI.UA", page_icon="💬")
 st.title("💬 Чат підтримки TI.UA")
 
@@ -85,12 +101,11 @@ user_input = st.text_input("Ваше питання:", key="user_input")
 if st.button("Відправити") and user_input:
     query = process_date_query(user_input)
     qa = st.session_state.qa
-    result = qa({"query": query})
+    result = qa.invoke({"query": query})  # invoke вместо __call__
     answer = result["result"].strip()
     if len(answer) < 10 or "не знаю" in answer.lower() or "не можу" in answer.lower():
         answer = "Питаю менеджера"
     st.session_state.history.append((user_input, answer))
-
 
 for q, a in st.session_state.history[::-1]:
     st.markdown(f"**Ви:** {q}")
