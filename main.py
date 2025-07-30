@@ -6,9 +6,13 @@ from langchain.chains import RetrievalQA
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.prompts import PromptTemplate
 from bs4 import BeautifulSoup
-import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import time
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
 load_dotenv()
 
@@ -20,13 +24,127 @@ STORES_URL = "https://ti.ua/ua/nashi-magazini/"
 
 
 def fetch_page_text(url):
-    resp = requests.get(url)
-    soup = BeautifulSoup(resp.text, "html.parser")
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-    text = soup.get_text(separator="\n")
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    return "\n".join(lines)
+
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    
+    try:
+
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        driver.get(url)
+        
+
+        time.sleep(3)
+        
+
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, "html.parser")
+        
+
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+        
+
+        if "faq" in url.lower():
+            all_texts = []
+            
+
+            accordeon_elements = soup.find_all(class_="faq-accordeon")
+            for element in accordeon_elements:
+                all_texts.append(element.get_text(separator="\n", strip=True))
+            
+
+            text_content_elements = soup.find_all(class_="text-content")
+            for element in text_content_elements:
+                all_texts.append(element.get_text(separator="\n", strip=True))
+            
+
+            for element in soup.find_all(class_=True):
+                class_names = " ".join(element.get("class", []))
+                if any(keyword in class_names.lower() for keyword in ["faq", "accord", "content", "text"]):
+                    text = element.get_text(separator="\n", strip=True)
+                    if len(text) > 20:
+                        all_texts.append(text)
+            
+
+            for element in soup.find_all(attrs={"data-toggle": True}):
+                text = element.get_text(separator="\n", strip=True)
+                if len(text) > 20:
+                    all_texts.append(text)
+            
+
+            for element in soup.find_all(attrs={"role": "button"}):
+                text = element.get_text(separator="\n", strip=True)
+                if len(text) > 20:
+                    all_texts.append(text)
+            
+
+            for element in soup.find_all(attrs={"aria-expanded": True}):
+                text = element.get_text(separator="\n", strip=True)
+                if len(text) > 20:
+                    all_texts.append(text)
+            
+
+            for element in soup.find_all(attrs={"data-bs-toggle": True}):
+                text = element.get_text(separator="\n", strip=True)
+                if len(text) > 20:
+                    all_texts.append(text)
+            
+
+            for element in soup.find_all(id=True):
+                element_id = element.get("id", "").lower()
+                if any(keyword in element_id for keyword in ["faq", "accord", "collapse"]):
+                    text = element.get_text(separator="\n", strip=True)
+                    if len(text) > 20:
+                        all_texts.append(text)
+            
+
+            for element in soup.find_all(attrs={"data-target": True}):
+                text = element.get_text(separator="\n", strip=True)
+                if len(text) > 20:
+                    all_texts.append(text)
+            
+            for element in soup.find_all(attrs={"data-bs-target": True}):
+                text = element.get_text(separator="\n", strip=True)
+                if len(text) > 20:
+                    all_texts.append(text)
+            
+
+            if all_texts:
+
+                unique_texts = list(set(all_texts))
+                return "\n\n".join(unique_texts)
+            
+
+            faq_keywords = ["кредит", "розстрочка", "повернення", "доставка", "оплата", "гарантія"]
+            for element in soup.find_all():
+                text = element.get_text(strip=True)
+                if len(text) > 50 and any(keyword in text.lower() for keyword in faq_keywords):
+                    all_texts.append(text)
+            
+            if all_texts:
+                unique_texts = list(set(all_texts))
+                return "\n\n".join(unique_texts)
+        
+
+        text = soup.get_text(separator="\n")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return "\n".join(lines)
+        
+    except Exception as e:
+        st.error(f"Ошибка при парсинге {url}: {str(e)}")
+        return ""
+    finally:
+
+        if 'driver' in locals():
+            driver.quit()
 
 
 def prepare_corpus():
@@ -53,13 +171,17 @@ def build_vectorstore(docs):
 
 # LangChain QA
 def get_qa_chain(vectorstore):
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
     llm = OpenAI(temperature=0, openai_api_key=OPENAI_API_KEY, model=OPENAI_MODEL)
 
     prompt = PromptTemplate(
         input_variables=["context", "question"],
         template=(
-            "Відповідай українською мовою, використовуючи тільки надану інформацію з FAQ TI.UA.\n"
+            "Відповідай українською мовою ТІЛЬКИ на задане питання, використовуючи надану інформацію з FAQ TI.UA.\n"
+            "НЕ генеруй додаткові питання або відповіді. Давай тільки один конкретний відповідь.\n"
+            "ВАЖЛИВО: Використовуй ВСЮ доступну інформацію з контексту. Не пропускай деталі.\n"
+            "Якщо в контексті є детальна інформація про кредити, розстрочку, сервіси - обов'язково включи їх у відповідь.\n"
+            "НЕ кажи 'інформація відсутня' або 'зверніться до інших джерел'. Якщо точної інформації немає, скажи 'Питаю менеджера'.\n"
             "Контекст:\n{context}\n"
             "Питання: {question}\n"
             "Відповідь:"
