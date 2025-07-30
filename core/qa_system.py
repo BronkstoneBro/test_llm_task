@@ -1,7 +1,7 @@
 from langchain.chains import RetrievalQA
 from langchain_openai import OpenAI
 from langchain.prompts import PromptTemplate
-from config import OPENAI_API_KEY, OPENAI_MODEL
+from core.config import OPENAI_API_KEY, OPENAI_MODEL
 
 def get_qa_chain(vectorstore):
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})

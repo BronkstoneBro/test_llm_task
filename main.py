@@ -1,7 +1,7 @@
 import streamlit as st
-from data_processor import prepare_corpus, build_vectorstore
-from qa_system import get_qa_chain
-from utils import process_date_query
+from core.data_processor import prepare_corpus, build_vectorstore
+from core.qa_system import get_qa_chain
+from core.utils import process_date_query
 
 def main():
     st.set_page_config(page_title="Чат підтримки TI.UA", page_icon="💬")

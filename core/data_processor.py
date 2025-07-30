@@ -1,5 +1,5 @@
-from scraper import fetch_page_text
-from config import FAQ_URL, STORES_URL, OPENAI_API_KEY
+from core.scraper import fetch_page_text
+from core.config import FAQ_URL, STORES_URL, OPENAI_API_KEY
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS

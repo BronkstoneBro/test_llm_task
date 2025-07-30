@@ -5,7 +5,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import streamlit as st
-from config import FAQ_URL
+from core.config import FAQ_URL
 
 def setup_chrome_driver():
     options = Options()
